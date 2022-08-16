@@ -61,13 +61,33 @@ class APIManager {
             }
     }
     
-    func addProduct(information: NewProductInformation, images: [NewProductImage], completion: @escaping (Result<ProductDetail, Error>) -> Void) {
-        guard let url = URLManager.addNewProduct.url else { return }
-        var request = URLRequest(url: url, method: .post)
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        request.addValue("819efbc3-71fc-11ec-abfa-dd40b1881f4c", forHTTPHeaderField: "identifier")
-        request.httpBody = createRequestBody(product: information, images: images)
-        createDataTaskWithDecoding(with: request, completion: completion)
+    func uploadDataWithImage(information: NewProductInformation, images: [NewProductImage], completion: @escaping (Result<Int, Error>) -> Void) {
+        guard let url = URLManager.addNewProduct.url,
+              let informationData = JSONParser.encodeToDataString(with: information) else {
+            return
+        }
+        let headers: Alamofire.HTTPHeaders = [
+            "Content-Type": "multipart/form-data",
+            "identifier": "819efbc3-71fc-11ec-abfa-dd40b1881f4c"
+        ]
+        let parameters = ["params": informationData]
+        
+        AF.upload(multipartFormData: { multipartFormData in
+            for (key, value) in parameters {
+                multipartFormData.append(value.data(using: .utf8)!, withName: key)
+            }
+            for image in images {
+                multipartFormData.append(image.data, withName: image.key, fileName: image.fileName, mimeType: "image/jpeg, image/jpg, image/png")
+            }
+            
+        }, to: url, method: .post, headers: headers)
+        .response { response in
+            guard let statusCode = response.response?.statusCode else {
+                return
+            }
+            completion(.success(statusCode))
+        }
+        
     }
     
     func editProduct(id: Int, product: NewProductInformation, completion: @escaping (Result<Data, Error>) -> Void) {
@@ -127,7 +147,7 @@ extension APIManager {
                 body.append("--\(boundary + lineBreak)")
                 body.append("Content-Disposition: form-data; name=\"\(image.key)\"; filename=\"\(image.fileName)\"\(lineBreak)")
                 body.append("Content-Type: image/jpeg, image/jpg, image/png\(lineBreak + lineBreak)")
-                body.append(image.image)
+                body.append(image.data)
                 body.append(lineBreak)
             }
         }
