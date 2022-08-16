@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import Alamofire
 
 typealias Parameters = [String: String]
 
@@ -15,22 +16,49 @@ class APIManager {
     }
     
     // MARK: - API Method
-    func checkAPIHealth(completion: @escaping (Result<Data, Error>) -> Void) {
+    func checkAPIHealth() {
         guard let url = URLManager.healthChecker.url else { return }
-        let request = URLRequest(url: url, method: .get)
-        createDataTask(with: request, completion: completion)
+        AF.request(url)
+            .responseJSON {
+            print($0)
+        }
     }
     
     func checkProductDetail(id: Int, completion: @escaping (Result<ProductDetail, Error>) -> Void) {
         guard let url = URLManager.editOrCheckProductDetail(id: id).url else { return }
-        let request = URLRequest(url: url, method: .get)
-        createDataTaskWithDecoding(with: request, completion: completion)
+        AF.request(url)
+            .validate()
+            .responseData { response in
+                switch response.result {
+                case .success:
+                    guard let responseData = response.value,
+                          let decodedData = JSONParser.decodeData(of: responseData, type: ProductDetail.self) else {
+                        return
+                    }
+                    completion(.success(decodedData))
+                case .failure(let error):
+                    completion(.failure(error))
+                }
+                
+            }
     }
     
     func checkProductList(pageNumber: Int, itemsPerPage: Int, completion: @escaping (Result<ProductList, Error>) -> Void) {
         guard let url = URLManager.checkProductList(pageNumber: pageNumber, itemsPerPage: itemsPerPage).url else { return }
-        let request = URLRequest(url: url, method: .get)
-        createDataTaskWithDecoding(with: request, completion: completion)
+        AF.request(url)
+            .validate()
+            .responseData { response in
+                switch response.result {
+                case .success:
+                    guard let responseData = response.value,
+                          let decodedData = JSONParser.decodeData(of: responseData, type: ProductList.self) else {
+                        return
+                    }
+                    completion(.success(decodedData))
+                case .failure(let error):
+                    completion(.failure(error))
+                }
+            }
     }
     
     func addProduct(information: NewProductInformation, images: [NewProductImage], completion: @escaping (Result<ProductDetail, Error>) -> Void) {
