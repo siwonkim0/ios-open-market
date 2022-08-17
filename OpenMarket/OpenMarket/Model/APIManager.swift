@@ -63,7 +63,7 @@ class APIManager {
     
     func uploadDataWithImage(information: NewProductInformation, images: [NewProductImage], completion: @escaping (Result<Int, Error>) -> Void) {
         guard let url = URLManager.addNewProduct.url,
-              let informationData = JSONParser.encodeToDataString(with: information) else {
+              let informationData = JSONParser.encodeToData(with: information) else {
             return
         }
         let headers: Alamofire.HTTPHeaders = [
@@ -74,7 +74,7 @@ class APIManager {
         
         AF.upload(multipartFormData: { multipartFormData in
             for (key, value) in parameters {
-                multipartFormData.append(value.data(using: .utf8)!, withName: key)
+                multipartFormData.append(value, withName: key)
             }
             for image in images {
                 multipartFormData.append(image.data, withName: image.key, fileName: image.fileName, mimeType: "image/jpeg, image/jpg, image/png")
@@ -96,14 +96,33 @@ class APIManager {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue("819efbc3-71fc-11ec-abfa-dd40b1881f4c", forHTTPHeaderField: "identifier")
         request.httpBody = JSONParser.encodeToData(with: product)
-        createDataTask(with: request, completion: completion)
+
+        AF.request(request)
+            .responseData { response in
+                guard let data = response.value else {
+                    return
+                }
+                completion(.success(data))
+            }
     }
     
     func deleteProduct(id: Int, secret: String, completion: @escaping (Result<ProductDetail, Error>) -> Void) {
         guard let url = URLManager.deleteProduct(id: id, secret: secret).url else { return }
         var request = URLRequest(url: url, method: .delete)
         request.addValue("819efbc3-71fc-11ec-abfa-dd40b1881f4c", forHTTPHeaderField: "identifier")
-        createDataTaskWithDecoding(with: request, completion: completion)
+        AF.request(request)
+            .responseData { response in
+                switch response.result {
+                case .success:
+                    guard let responseData = response.value,
+                          let decodedData = JSONParser.decodeData(of: responseData, type: ProductDetail.self) else {
+                        return
+                    }
+                    completion(.success(decodedData))
+                case .failure(let error):
+                    completion(.failure(error))
+                }
+            }
     }
     
     func checkProductSecret(id: Int, completion: @escaping (Result<Data, Error>) -> Void) {
@@ -112,102 +131,15 @@ class APIManager {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue("819efbc3-71fc-11ec-abfa-dd40b1881f4c", forHTTPHeaderField: "identifier")
         request.httpBody = JSONParser.encodeToData(with: vendorSecret)
-        createDataTask(with: request, completion: completion)
-    }
-}
-
-extension APIManager {
-    // MARK: - Create Request Body Method
-    func createRequestBody(product: NewProductInformation, images: [NewProductImage]) -> Data {
-        let parameters = createParams(with: product)
-        let dataBody = createMultiPartFormData(with: parameters, images: images)
-        return dataBody
-    }
-    
-    func createParams(with modelData: NewProductInformation) -> Parameters? {
-        guard let parameterBody = JSONParser.encodeToDataString(with: modelData) else { return nil }
-        let params: Parameters = ["params": parameterBody]
-        return params
-    }
-    
-    func createMultiPartFormData(with params: Parameters?, images: [NewProductImage]?) -> Data {
-        let lineBreak = "\r\n"
-        var body = Data()
         
-        if let parameters = params {
-            for (key, value) in parameters {
-                body.append("--\(boundary + lineBreak)")
-                body.append("Content-Disposition: form-data; name=\"\(key)\"\(lineBreak + lineBreak)")
-                body.append("\(value)\(lineBreak)")
+        AF.request(request)
+            .responseData { response in
+                guard let data = response.value else {
+                    return
+                }
+                completion(.success(data))
             }
-        }
-
-        if let images = images {
-            for image in images {
-                body.append("--\(boundary + lineBreak)")
-                body.append("Content-Disposition: form-data; name=\"\(image.key)\"; filename=\"\(image.fileName)\"\(lineBreak)")
-                body.append("Content-Type: image/jpeg, image/jpg, image/png\(lineBreak + lineBreak)")
-                body.append(image.data)
-                body.append(lineBreak)
-            }
-        }
-        
-        body.append("--\(boundary)--\(lineBreak)")
-        
-        return body
     }
-}
-
-extension APIManager {
-    // MARK: - Create DataTask Method
-    func createDataTaskWithDecoding<T: Decodable>(with request: URLRequest, completion: @escaping (Result<T, Error>) -> Void) {
-        let task = urlSession.dataTask(with: request) { data, response, error in
-            if let httpResponse = response as? HTTPURLResponse,
-               httpResponse.statusCode >= 300 {
-                completion(.failure(URLSessionError.responseFailed(code: httpResponse.statusCode)))
-                return
-            }
-            
-            if let error = error {
-                completion(.failure(URLSessionError.requestFailed(description: error.localizedDescription)))
-                return
-            }
-            
-            guard let data = data else {
-                completion(.failure(URLSessionError.invaildData))
-                return
-            }
-            guard let decodedData = JSONParser.decodeData(of: data, type: T.self) else {
-                completion(.failure(JSONError.dataDecodeFailed))
-                return
-            }
-            completion(.success(decodedData))
-        }
-        task.resume()
-    }
-    
-    func createDataTask(with request: URLRequest, completion: @escaping (Result<Data, Error>) -> Void) {
-        let task = urlSession.dataTask(with: request) { data, response, error in
-            if let httpResponse = response as? HTTPURLResponse,
-               httpResponse.statusCode >= 300 {
-                completion(.failure(URLSessionError.responseFailed(code: httpResponse.statusCode)))
-                return
-            }
-            
-            if let error = error {
-                completion(.failure(URLSessionError.requestFailed(description: error.localizedDescription)))
-                return
-            }
-            
-            guard let data = data else {
-                completion(.failure(URLSessionError.invaildData))
-                return
-            }
-
-            completion(.success(data))
-        }
-        task.resume()
-    } 
 }
 
 extension APIManager {
